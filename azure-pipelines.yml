@@ -181,22 +181,10 @@ stages:
                     path: $(Pipeline.Workspace)/drop
 
                 - script: |
-                    # Write publish profile to a temp file to avoid shell quoting issues
                     printf '%s' "$PUBLISH_PROFILE" > /tmp/pp.xml
-
-                    # Parse all three values in one Python call (no heredoc — keeps YAML valid)
-                    python3 -c "
-import xml.etree.ElementTree as ET
-root = ET.parse('/tmp/pp.xml').getroot()
-prof = next(p for p in root.findall('publishProfile') if p.get('publishMethod') == 'MSDeploy')
-host = prof.get('publishUrl').split(':')[0]
-open('/tmp/kudu_vars.sh', 'w').write(
-    'KUDU_USER=' + repr(prof.get('userName')) + '\n' +
-    'KUDU_PASS=' + repr(prof.get('userPWD')) + '\n' +
-    'KUDU_HOST=' + repr(host) + '\n'
-)
-"
-                    source /tmp/kudu_vars.sh
+                    KUDU_USER=$(grep -oP 'userName="\K[^"]+' /tmp/pp.xml | head -1)
+                    KUDU_PASS=$(grep -oP 'userPWD="\K[^"]+' /tmp/pp.xml | head -1)
+                    KUDU_HOST=$(grep -oP 'publishUrl="\K[^"]+' /tmp/pp.xml | head -1 | cut -d: -f1)
                     echo "Deploying to https://$KUDU_HOST ..."
                     curl -X POST \
                       "https://$KUDU_HOST/api/zipdeploy?isAsync=true" \
