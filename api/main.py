@@ -28,7 +28,8 @@ _origins = [
     "http://localhost:5180",
     "http://localhost:3000",
     "http://127.0.0.1:5180",
-    "https://pmtracker-app-g5c5fkgshwbyd5f4.southindia-01.azurewebsites.net",
+    "https://cogniteer-pmtracker-endtbufkcdbbf5fj.southindia-01.azurewebsites.net",
+    "https://cogniteer-pmtracker.azurewebsites.net",
 ]
 _extra = os.environ.get("ALLOWED_ORIGINS", "")
 if _extra:

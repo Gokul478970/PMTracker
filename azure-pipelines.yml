@@ -1,3 +1,15 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PMTracker — Azure Pipelines CI/CD
+# Org : https://dev.azure.com/Cogniteer/velocity-tracker
+#
+# BEFORE YOUR FIRST RUN:
+#   1. Go to Project Settings → Service connections → New service connection
+#   2. Choose "Azure Resource Manager" → "Service principal (automatic)"
+#   3. Select the subscription that hosts your App Service and give it a name
+#   4. Replace 'YOUR_SERVICE_CONNECTION_NAME' below with that name
+#      (or set it as a pipeline variable to avoid committing credentials)
+# ─────────────────────────────────────────────────────────────────────────────
+
 trigger:
   branches:
     include:
@@ -9,18 +21,25 @@ pool:
 variables:
   pythonVersion: '3.11'
   nodeVersion: '20.x'
-  # Set these in Azure DevOps Pipeline Variables (or replace inline):
-  azureSubscription: 'YOUR_SERVICE_CONNECTION_NAME'
-  appServiceName: 'YOUR_APP_SERVICE_NAME'
+  # ── Replace with your Azure DevOps service connection name ──────────────────
+  azureSubscription: '7b62dc90-3344-4868-9cd9-8f2a298eb856'
+  # ── App Service name (without .azurewebsites.net) ───────────────────────────
+  appServiceName: 'cogniteer-pmtracker'
+  # ── Resource group that contains the App Service ────────────────────────────
+  resourceGroup: 'cogn_rs_pmtracker'
+  # ── Staging directory used to assemble the deployment zip ───────────────────
+  stagingDir: '$(Build.BinariesDirectory)/staging'
 
 stages:
+  # ═══════════════════════════════════════════════════════════════════════════
   - stage: Build
-    displayName: 'Build & Package'
+    displayName: '🔨 Build & Package'
     jobs:
       - job: BuildJob
         displayName: 'Build Application'
         steps:
-          # --- Python setup ---
+
+          # ── Python: validate dependencies can install cleanly ───────────────
           - task: UsePythonVersion@0
             inputs:
               versionSpec: '$(pythonVersion)'
@@ -28,10 +47,10 @@ stages:
 
           - script: |
               python -m pip install --upgrade pip
-              pip install fastapi uvicorn
-            displayName: 'Install Python dependencies'
+              pip install -r requirements.txt
+            displayName: 'Validate Python dependencies'
 
-          # --- Node setup & build frontend ---
+          # ── Node / React: reproducible install + Vite build ─────────────────
           - task: NodeTool@0
             inputs:
               versionSpec: '$(nodeVersion)'
@@ -39,28 +58,46 @@ stages:
 
           - script: |
               cd ui
-              npm install
+              npm ci
               npm run build
-            displayName: 'Build React frontend'
+            displayName: 'Build React frontend (Vite)'
 
-          # --- Package everything ---
+          # ── Stage: copy source minus dev artefacts ──────────────────────────
+          - task: CopyFiles@2
+            inputs:
+              SourceFolder: '$(Build.SourcesDirectory)'
+              Contents: |
+                **/*
+                !ui/node_modules/**
+                !**/__pycache__/**
+                !**/*.pyc
+                !**/*.pyo
+                !.git/**
+                !.github/**
+                !tests/**
+                !.venv/**
+                !*.md
+              TargetFolder: '$(stagingDir)'
+            displayName: 'Stage deployment files'
+
+          # ── Zip the staged directory ─────────────────────────────────────────
           - task: ArchiveFiles@2
             inputs:
-              rootFolderOrFile: '$(Build.SourcesDirectory)'
+              rootFolderOrFile: '$(stagingDir)'
               includeRootFolder: false
               archiveType: 'zip'
               archiveFile: '$(Build.ArtifactStagingDirectory)/pmtracker.zip'
               replaceExistingArchive: true
-            displayName: 'Zip deployment package'
+            displayName: 'Create deployment zip'
 
           - publish: '$(Build.ArtifactStagingDirectory)/pmtracker.zip'
             artifact: 'drop'
             displayName: 'Publish artifact'
 
+  # ═══════════════════════════════════════════════════════════════════════════
   - stage: Deploy
-    displayName: 'Deploy to Azure'
+    displayName: '🚀 Deploy to Azure App Service'
     dependsOn: Build
-    condition: succeeded()
     jobs:
       - deployment: DeployJob
         displayName: 'Deploy to App Service'
@@ -69,6 +106,24 @@ stages:
           runOnce:
             deploy:
               steps:
+
+                # ── Configure App Service settings ────────────────────────────
+                # Ensures Oryx installs Python deps on first deploy and the
+                # correct startup script is used.
+                - task: AzureAppServiceSettings@1
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    appName: '$(appServiceName)'
+                    resourceGroupName: '$(resourceGroup)'
+                    appSettings: |
+                      [
+                        { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "true",  "slotSetting": false },
+                        { "name": "WEBSITE_RUN_FROM_PACKAGE",        "value": "0",     "slotSetting": false },
+                        { "name": "PYTHON_VERSION",                  "value": "3.11",  "slotSetting": false }
+                      ]
+                  displayName: 'Configure App Service settings'
+
+                # ── Deploy zip ────────────────────────────────────────────────
                 - task: AzureWebApp@1
                   inputs:
                     azureSubscription: '$(azureSubscription)'
@@ -76,5 +131,5 @@ stages:
                     appName: '$(appServiceName)'
                     package: '$(Pipeline.Workspace)/drop/pmtracker.zip'
                     runtimeStack: 'PYTHON|3.11'
-                    startUpCommand: 'uvicorn api.main:app --host 0.0.0.0 --port 8000'
+                    startUpCommand: 'bash startup.sh'
                   displayName: 'Deploy to Azure App Service'
