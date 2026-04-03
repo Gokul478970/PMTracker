@@ -1,135 +1,236 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PMTracker — Azure Pipelines CI/CD
-# Org : https://dev.azure.com/Cogniteer/velocity-tracker
 #
-# BEFORE YOUR FIRST RUN:
-#   1. Go to Project Settings → Service connections → New service connection
-#   2. Choose "Azure Resource Manager" → "Service principal (automatic)"
-#   3. Select the subscription that hosts your App Service and give it a name
-#   4. Replace 'YOUR_SERVICE_CONNECTION_NAME' below with that name
-#      (or set it as a pipeline variable to avoid committing credentials)
+# Stages
+#   1. build  — lint, test, and produce a deployable artifact
+#   2. deploy — push artifact to Azure App Service
+#
+# Required pipeline variables (set in Azure DevOps → Library or pipeline UI):
+#   AZURE_SUBSCRIPTION   : Azure Resource Manager service connection name
+#   WEBAPP_NAME          : Azure App Service name  (e.g. pmtracker-app)
+#   RESOURCE_GROUP       : Resource group that owns the App Service
 # ─────────────────────────────────────────────────────────────────────────────
 
 trigger:
   branches:
     include:
       - main
+      - develop
+  paths:
+    exclude:
+      - "*.md"
+      - docs/**
 
-pool:
-  vmImage: 'ubuntu-latest'
+pr:
+  branches:
+    include:
+      - main
+      - develop
 
 variables:
-  pythonVersion: '3.11'
-  nodeVersion: '20.x'
-  # ── Replace with your Azure DevOps service connection name ──────────────────
-  azureSubscription: '7b62dc90-3344-4868-9cd9-8f2a298eb856'
-  # ── App Service name (without .azurewebsites.net) ───────────────────────────
-  appServiceName: 'cogniteer-pmtracker'
-  # ── Resource group that contains the App Service ────────────────────────────
-  resourceGroup: 'cogn_rs_pmtracker'
-  # ── Staging directory used to assemble the deployment zip ───────────────────
-  stagingDir: '$(Build.BinariesDirectory)/staging'
+  pythonVersion: "3.11"
+  nodeVersion: "20.x"
+  artifactName: "pmtracker-drop"
+  # Azure App Service — update AZURE_SUBSCRIPTION and RESOURCE_GROUP in pipeline settings
+  WEBAPP_NAME: "cogniteer-pmtracker"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 — Build & Test
+# ─────────────────────────────────────────────────────────────────────────────
 stages:
-  # ═══════════════════════════════════════════════════════════════════════════
   - stage: Build
-    displayName: '🔨 Build & Package'
+    displayName: "Build & Test"
     jobs:
-      - job: BuildJob
-        displayName: 'Build Application'
+
+      # ── Python backend ──────────────────────────────────────────────────────
+      - job: BackendCI
+        displayName: "Python — lint & test"
+        pool:
+          vmImage: ubuntu-latest
+
         steps:
-
-          # ── Python: validate dependencies can install cleanly ───────────────
           - task: UsePythonVersion@0
+            displayName: "Use Python $(pythonVersion)"
             inputs:
-              versionSpec: '$(pythonVersion)'
-            displayName: 'Use Python $(pythonVersion)'
+              versionSpec: $(pythonVersion)
+              addToPath: true
+
+          - script: pip install --upgrade pip
+            displayName: "Upgrade pip"
+
+          - script: pip install -r requirements.txt
+            displayName: "Install runtime dependencies"
+
+          - script: pip install pytest pytest-asyncio pytest-cov
+            displayName: "Install test dependencies"
+
+          # Optional: add ruff/flake8 here if you adopt a linter
+          # - script: pip install ruff && ruff check .
+          #   displayName: "Lint (ruff)"
 
           - script: |
-              python -m pip install --upgrade pip
-              pip install -r requirements.txt
-            displayName: 'Validate Python dependencies'
+              python -m pytest tests/ \
+                --tb=short \
+                --junitxml=$(Build.ArtifactStagingDirectory)/test-results.xml \
+                --cov=pmtracker \
+                --cov=api \
+                --cov-report=xml:$(Build.ArtifactStagingDirectory)/coverage.xml \
+                --cov-report=term-missing
+            displayName: "Run pytest"
 
-          # ── Node / React: reproducible install + Vite build ─────────────────
+          - task: PublishTestResults@2
+            displayName: "Publish test results"
+            condition: always()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: "$(Build.ArtifactStagingDirectory)/test-results.xml"
+              failTaskOnFailedTests: true
+
+          - task: PublishCodeCoverageResults@2
+            displayName: "Publish coverage"
+            condition: always()
+            inputs:
+              summaryFileLocation: "$(Build.ArtifactStagingDirectory)/coverage.xml"
+
+      # ── React / Vite frontend ───────────────────────────────────────────────
+      - job: FrontendBuild
+        displayName: "Node — build UI"
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
           - task: NodeTool@0
+            displayName: "Use Node $(nodeVersion)"
             inputs:
-              versionSpec: '$(nodeVersion)'
-            displayName: 'Use Node.js $(nodeVersion)'
+              versionSpec: $(nodeVersion)
 
-          - script: |
-              cd ui
-              npm ci
-              npm run build
-            displayName: 'Build React frontend (Vite)'
+          - script: npm ci
+            workingDirectory: ui
+            displayName: "npm ci"
 
-          # ── Stage: copy source minus dev artefacts ──────────────────────────
+          - script: npm run lint -- --max-warnings 0
+            workingDirectory: ui
+            displayName: "ESLint"
+            continueOnError: false
+
+          - script: npm run build
+            workingDirectory: ui
+            displayName: "Vite build"
+
           - task: CopyFiles@2
+            displayName: "Stage ui/dist"
             inputs:
-              SourceFolder: '$(Build.SourcesDirectory)'
+              SourceFolder: ui/dist
+              Contents: "**"
+              TargetFolder: $(Build.ArtifactStagingDirectory)/ui/dist
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish ui/dist artifact"
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/ui/dist
+              artifact: ui-dist
+
+      # ── Assemble deployment package ─────────────────────────────────────────
+      - job: Package
+        displayName: "Assemble deployment artifact"
+        dependsOn:
+          - BackendCI
+          - FrontendBuild
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
+          # Re-download built UI
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download ui/dist artifact"
+            inputs:
+              artifact: ui-dist
+              path: ui/dist
+
+          # Copy everything except dev-only dirs into staging
+          - task: CopyFiles@2
+            displayName: "Stage backend sources"
+            inputs:
               Contents: |
-                **/*
-                !ui/node_modules/**
+                **
+                !ui/**
+                !tests/**
+                !.git/**
                 !**/__pycache__/**
                 !**/*.pyc
-                !**/*.pyo
-                !.git/**
-                !.github/**
-                !tests/**
-                !.venv/**
-                !*.md
-              TargetFolder: '$(stagingDir)'
-            displayName: 'Stage deployment files'
+              TargetFolder: $(Build.ArtifactStagingDirectory)/app
 
-          # ── Zip the staged directory ─────────────────────────────────────────
-          - task: ArchiveFiles@2
+          # Put the pre-built UI back in the package
+          - task: CopyFiles@2
+            displayName: "Stage pre-built UI"
             inputs:
-              rootFolderOrFile: '$(stagingDir)'
+              SourceFolder: $(Pipeline.Workspace)/ui/dist
+              Contents: "**"
+              TargetFolder: $(Build.ArtifactStagingDirectory)/app/ui/dist
+
+          - task: ArchiveFiles@2
+            displayName: "Zip deployment package"
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)/app
               includeRootFolder: false
-              archiveType: 'zip'
-              archiveFile: '$(Build.ArtifactStagingDirectory)/pmtracker.zip'
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
               replaceExistingArchive: true
-            displayName: 'Create deployment zip'
 
-          - publish: '$(Build.ArtifactStagingDirectory)/pmtracker.zip'
-            artifact: 'drop'
-            displayName: 'Publish artifact'
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish deployment zip"
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
+              artifact: $(artifactName)
 
-  # ═══════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 — Deploy to Azure App Service
+# ─────────────────────────────────────────────────────────────────────────────
   - stage: Deploy
-    displayName: '🚀 Deploy to Azure App Service'
+    displayName: "Deploy to Azure App Service"
     dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
     jobs:
-      - deployment: DeployJob
-        displayName: 'Deploy to App Service'
-        environment: 'production'
+      - deployment: DeployWeb
+        displayName: "Deploy $(WEBAPP_NAME)"
+        environment: production
+        pool:
+          vmImage: ubuntu-latest
+
         strategy:
           runOnce:
             deploy:
               steps:
-
-                # ── Configure App Service settings ────────────────────────────
-                # Ensures Oryx installs Python deps on first deploy and the
-                # correct startup script is used.
-                - task: AzureAppServiceSettings@1
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download deployment zip"
                   inputs:
-                    azureSubscription: '$(azureSubscription)'
-                    appName: '$(appServiceName)'
-                    resourceGroupName: '$(resourceGroup)'
-                    appSettings: |
-                      [
-                        { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "true",  "slotSetting": false },
-                        { "name": "WEBSITE_RUN_FROM_PACKAGE",        "value": "0",     "slotSetting": false },
-                        { "name": "PYTHON_VERSION",                  "value": "3.11",  "slotSetting": false }
-                      ]
-                  displayName: 'Configure App Service settings'
+                    artifact: $(artifactName)
+                    path: $(Pipeline.Workspace)/drop
 
-                # ── Deploy zip ────────────────────────────────────────────────
                 - task: AzureWebApp@1
+                  displayName: "Deploy to App Service"
                   inputs:
-                    azureSubscription: '$(azureSubscription)'
-                    appType: 'webAppLinux'
-                    appName: '$(appServiceName)'
-                    package: '$(Pipeline.Workspace)/drop/pmtracker.zip'
-                    runtimeStack: 'PYTHON|3.11'
-                    startUpCommand: 'bash startup.sh'
-                  displayName: 'Deploy to Azure App Service'
+                    azureSubscription: $(AZURE_SUBSCRIPTION)
+                    appType: webAppLinux
+                    appName: $(WEBAPP_NAME)
+                    resourceGroupName: $(RESOURCE_GROUP)
+                    package: $(Pipeline.Workspace)/drop/$(artifactName).zip
+                    # Use startup.sh which installs/builds the frontend and
+                    # launches gunicorn with UvicornWorker
+                    startUpCommand: "bash startup.sh"
+                    deploymentMethod: zipDeploy
+
+                # ── Post-deploy smoke test ───────────────────────────────────
+                - script: |
+                    BASE="https://$(WEBAPP_NAME).azurewebsites.net"
+                    echo "Pinging $BASE/api/health ..."
+                    for i in 1 2 3 4 5; do
+                      STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/health")
+                      echo "Attempt $i: HTTP $STATUS"
+                      [ "$STATUS" = "200" ] && exit 0
+                      sleep 10
+                    done
+                    echo "Health check failed after 5 attempts"
+                    exit 1
+                  displayName: "Smoke test — /api/health"
