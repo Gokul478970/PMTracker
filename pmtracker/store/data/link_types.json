@@ -1,0 +1,6 @@
+[
+  { "id": "1", "name": "Blocks",    "inward": "is blocked by",    "outward": "blocks" },
+  { "id": "2", "name": "Cloners",   "inward": "is cloned by",     "outward": "clones" },
+  { "id": "3", "name": "Duplicate", "inward": "is duplicated by", "outward": "duplicates" },
+  { "id": "4", "name": "Relates",   "inward": "relates to",       "outward": "relates to" }
+]

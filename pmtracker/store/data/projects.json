@@ -1,0 +1,14 @@
+[
+  {
+    "id": "10001",
+    "key": "COG",
+    "name": "Cogniteer",
+    "projectTypeKey": "software",
+    "lead": null,
+    "description": "Cogniteer - AI-powered software development pipeline platform",
+    "components": ["Backend", "Frontend", "Agents", "Pipeline", "Security", "Infrastructure"],
+    "versions": [],
+    "archived": false,
+    "admin_project": false
+  }
+]

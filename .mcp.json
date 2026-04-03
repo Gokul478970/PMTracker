@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pmtracker": {
+      "command": "C:/Program Files/Python313/python.exe",
+      "args": ["server.py"],
+      "cwd": "c:/Siva/projects/JiraMCP"
+    }
+  }
+}

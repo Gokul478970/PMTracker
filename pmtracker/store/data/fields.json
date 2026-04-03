@@ -1,0 +1,17 @@
+[
+  { "id": "summary",          "name": "Summary",       "schema": { "type": "string"    }, "custom": false },
+  { "id": "status",           "name": "Status",        "schema": { "type": "status"    }, "custom": false },
+  { "id": "assignee",         "name": "Assignee",      "schema": { "type": "user"      }, "custom": false },
+  { "id": "reporter",         "name": "Reporter",      "schema": { "type": "user"      }, "custom": false },
+  { "id": "priority",         "name": "Priority",      "schema": { "type": "priority"  }, "custom": false },
+  { "id": "issuetype",        "name": "Issue Type",    "schema": { "type": "issuetype" }, "custom": false },
+  { "id": "description",      "name": "Description",   "schema": { "type": "string"    }, "custom": false },
+  { "id": "labels",           "name": "Labels",        "schema": { "type": "array"     }, "custom": false },
+  { "id": "components",       "name": "Components",    "schema": { "type": "array"     }, "custom": false },
+  { "id": "fixVersions",      "name": "Fix Version/s", "schema": { "type": "array"     }, "custom": false },
+  { "id": "customfield_10001","name": "Story Points",  "schema": { "type": "number"    }, "custom": true,
+    "options": [1, 2, 3, 5, 8, 13, 21] },
+  { "id": "customfield_10002","name": "Epic Link",     "schema": { "type": "string"    }, "custom": true },
+  { "id": "customfield_10003","name": "Sprint",        "schema": { "type": "string"    }, "custom": true },
+  { "id": "estimate_hours",  "name": "Estimate (Hours)","schema": { "type": "number"   }, "custom": false }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "accountId": "user-001",
+    "displayName": "Alice Johnson",
+    "emailAddress": "alice@example.com",
+    "active": true,
+    "timeZone": "America/New_York",
+    "avatarUrl": "https://example.com/avatars/alice.png"
+  },
+  {
+    "accountId": "user-002",
+    "displayName": "Bob Smith",
+    "emailAddress": "bob@example.com",
+    "active": true,
+    "timeZone": "America/Chicago",
+    "avatarUrl": "https://example.com/avatars/bob.png"
+  },
+  {
+    "accountId": "user-003",
+    "displayName": "Carol White",
+    "emailAddress": "carol@example.com",
+    "active": true,
+    "timeZone": "Europe/London",
+    "avatarUrl": "https://example.com/avatars/carol.png"
+  }
+]

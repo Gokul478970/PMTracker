@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+/dist/
+/build/
+.venv/
+venv/
+
+# Node / UI
+ui/node_modules/
+
+# Claude Code
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Auth secrets (session tokens, password hashes)
+pmtracker/store/data/auth_sessions.json
+pmtracker/store/data/auth_users.json
+
+# Chat history (generated at runtime)
+pmtracker/store/data/chat_*.json
