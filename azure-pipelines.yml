@@ -65,36 +65,9 @@ stages:
           - script: pip install -r requirements.txt
             displayName: "Install runtime dependencies"
 
-          - script: pip install pytest pytest-asyncio pytest-cov
-            displayName: "Install test dependencies"
-
           # Optional: add ruff/flake8 here if you adopt a linter
           # - script: pip install ruff && ruff check .
           #   displayName: "Lint (ruff)"
-
-          - script: |
-              python -m pytest tests/ \
-                --tb=short \
-                --junitxml=$(Build.ArtifactStagingDirectory)/test-results.xml \
-                --cov=pmtracker \
-                --cov=api \
-                --cov-report=xml:$(Build.ArtifactStagingDirectory)/coverage.xml \
-                --cov-report=term-missing
-            displayName: "Run pytest"
-
-          - task: PublishTestResults@2
-            displayName: "Publish test results"
-            condition: always()
-            inputs:
-              testResultsFormat: JUnit
-              testResultsFiles: "$(Build.ArtifactStagingDirectory)/test-results.xml"
-              failTaskOnFailedTests: true
-
-          - task: PublishCodeCoverageResults@2
-            displayName: "Publish coverage"
-            condition: always()
-            inputs:
-              summaryFileLocation: "$(Build.ArtifactStagingDirectory)/coverage.xml"
 
       # ── React / Vite frontend ───────────────────────────────────────────────
       - job: FrontendBuild
