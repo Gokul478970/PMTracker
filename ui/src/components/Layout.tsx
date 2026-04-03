@@ -297,7 +297,7 @@ export function Layout({ children, onLogout }: LayoutProps) {
                           {(unreadCounts?.[p.key] || 0) > 0 && (
                             <span className="ml-auto flex items-center gap-1">
                               <span className="bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
-                                {unreadCounts[p.key] > 99 ? '99+' : unreadCounts[p.key]}
+                                {(unreadCounts?.[p.key] ?? 0) > 99 ? '99+' : unreadCounts?.[p.key]}
                               </span>
                             </span>
                           )}

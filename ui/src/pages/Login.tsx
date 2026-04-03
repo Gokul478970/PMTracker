@@ -37,7 +37,7 @@ export function Login({ onLogin }: Props) {
 
   // Auto-fill saved credentials on mount
   useEffect(() => {
-    if (window.PasswordCredential) {
+    if ((window as any).PasswordCredential) {
       navigator.credentials.get({ password: true } as any)
         .then((cred: any) => {
           if (cred && cred.type === 'password') {
@@ -56,9 +56,9 @@ export function Login({ onLogin }: Props) {
     try {
       const data = await authLogin(loginEmail, loginPassword)
       // Save credentials to browser's password manager
-      if (window.PasswordCredential) {
+      if ((window as any).PasswordCredential) {
         try {
-          const cred = new PasswordCredential({
+          const cred = new (window as any).PasswordCredential({
             id: loginEmail,
             password: loginPassword,
           })
