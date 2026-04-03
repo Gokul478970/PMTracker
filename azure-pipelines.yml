@@ -117,7 +117,7 @@ stages:
             displayName: "Download ui/dist artifact"
             inputs:
               artifact: ui-dist
-              path: ui/dist
+              path: $(Pipeline.Workspace)/ui/dist
 
           # Copy everything except dev-only dirs into staging
           - task: CopyFiles@2
