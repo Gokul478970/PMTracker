@@ -97,6 +97,27 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+def _bootstrap_admin():
+    """Ensure the admin user always exists in the data store with correct credentials.
+    Runs on every startup — safe to call repeatedly (only adds if missing)."""
+    import hashlib as _hl
+    from api.routes.auth import ADMIN_EMAIL, _hash, _now
+    users = json_store.load("auth_users", default=[])
+    admin = next((u for u in users if u["email"] == ADMIN_EMAIL), None)
+    if not admin:
+        users.append({
+            "email": ADMIN_EMAIL,
+            "password_hash": _hl.sha256("1068".encode()).hexdigest(),
+            "verified": True,
+            "role": "Admin",
+            "display_name": "Admin",
+            "created": _now(),
+            "verified_at": _now(),
+        })
+        json_store.save("auth_users", users)
+
+_bootstrap_admin()
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
