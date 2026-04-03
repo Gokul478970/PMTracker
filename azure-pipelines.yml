@@ -37,6 +37,7 @@ variables:
   nodeVersion: "20.x"
   artifactName: "pmtracker-drop"
   WEBAPP_NAME: "cogniteer-pmtracker"
+  WEBAPP_URL: "https://cogniteer-pmtracker-endtbufkcdbbf5fj.southindia-01.azurewebsites.net"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 1 — Build & Test
@@ -197,7 +198,7 @@ stages:
 
                 # ── Post-deploy smoke test ───────────────────────────────────
                 - script: |
-                    BASE="https://$(WEBAPP_NAME).azurewebsites.net"
+                    BASE="$(WEBAPP_URL)"
                     echo "Pinging $BASE/api/health ..."
                     for i in 1 2 3 4 5; do
                       STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/health")
