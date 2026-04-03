@@ -180,28 +180,31 @@ stages:
                     artifact: $(artifactName)
                     path: $(Pipeline.Workspace)/drop
 
-                - task: AzureWebApp@1
-                  displayName: "Deploy to App Service"
-                  inputs:
-                    appType: webAppLinux
-                    appName: $(WEBAPP_NAME)
-                    # No service connection needed — uses the publish profile secret
-                    publishProfileContent: $(PUBLISH_PROFILE)
-                    package: $(Pipeline.Workspace)/drop/$(artifactName).zip
-                    startUpCommand: "bash startup.sh"
-                    deploymentMethod: zipDeploy
+                - script: |
+                    # Write publish profile to a temp file to avoid shell quoting issues
+                    printf '%s' "$PUBLISH_PROFILE" > /tmp/pp.xml
 
-                # ── Alternative: Kudu ZIP deploy (no Azure tasks, no service connection)
-                # Uncomment below and remove the AzureWebApp@1 task above if preferred.
-                # Requires two secret pipeline variables: KUDU_USER and KUDU_PASS
-                # (found in App Service → Deployment Center → FTP credentials)
-                #
-                # - script: |
-                #     curl -X POST \
-                #       "https://$(WEBAPP_NAME).scm.azurewebsites.net/api/zipdeploy" \
-                #       -u "$(KUDU_USER):$(KUDU_PASS)" \
-                #       --data-binary @$(Pipeline.Workspace)/drop/$(artifactName).zip
-                #   displayName: "Kudu ZIP deploy"
+                    # Parse all three values in one Python call
+                    python3 - <<'PYEOF' > /tmp/kudu_vars.sh
+import xml.etree.ElementTree as ET
+root = ET.parse('/tmp/pp.xml').getroot()
+prof = next(p for p in root.findall('publishProfile') if p.get('publishMethod') == 'MSDeploy')
+host = prof.get('publishUrl').split(':')[0]  # strip port if present
+print(f"KUDU_USER='{prof.get('userName')}'")
+print(f"KUDU_PASS='{prof.get('userPWD')}'")
+print(f"KUDU_HOST='{host}'")
+PYEOF
+
+                    source /tmp/kudu_vars.sh
+                    echo "Deploying to https://$KUDU_HOST ..."
+                    curl -X POST \
+                      "https://$KUDU_HOST/api/zipdeploy?isAsync=true" \
+                      -u "$KUDU_USER:$KUDU_PASS" \
+                      --data-binary @$(Pipeline.Workspace)/drop/$(artifactName).zip \
+                      --fail --show-error
+                  displayName: "Deploy to App Service (Kudu ZIP)"
+                  env:
+                    PUBLISH_PROFILE: $(PUBLISH_PROFILE)
 
                 # ── Post-deploy smoke test ───────────────────────────────────
                 - script: |
