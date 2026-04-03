@@ -3,12 +3,17 @@
 #
 # Stages
 #   1. build  — lint, test, and produce a deployable artifact
-#   2. deploy — push artifact to Azure App Service
+#   2. deploy — push artifact to Azure App Service (no service connection needed)
 #
-# Required pipeline variables (set in Azure DevOps → Library or pipeline UI):
-#   AZURE_SUBSCRIPTION   : Azure Resource Manager service connection name
-#   WEBAPP_NAME          : Azure App Service name  (e.g. pmtracker-app)
-#   RESOURCE_GROUP       : Resource group that owns the App Service
+# Required pipeline secret variable (Azure DevOps → Pipelines → Variables):
+#
+#   PUBLISH_PROFILE  — full XML content of the App Service publish profile.
+#
+#   How to get it:
+#     Azure Portal → cogniteer-pmtracker App Service
+#       → Deployment Center → Manage publish profile → Download
+#     Open the downloaded .PublishSettings file, copy ALL the XML text,
+#     paste it as a secret pipeline variable named PUBLISH_PROFILE.
 # ─────────────────────────────────────────────────────────────────────────────
 
 trigger:
@@ -31,7 +36,6 @@ variables:
   pythonVersion: "3.11"
   nodeVersion: "20.x"
   artifactName: "pmtracker-drop"
-  # Azure App Service — update AZURE_SUBSCRIPTION and RESOURCE_GROUP in pipeline settings
   WEBAPP_NAME: "cogniteer-pmtracker"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,15 +215,25 @@ stages:
                 - task: AzureWebApp@1
                   displayName: "Deploy to App Service"
                   inputs:
-                    azureSubscription: $(AZURE_SUBSCRIPTION)
                     appType: webAppLinux
                     appName: $(WEBAPP_NAME)
-                    resourceGroupName: $(RESOURCE_GROUP)
+                    # No service connection needed — uses the publish profile secret
+                    publishProfileContent: $(PUBLISH_PROFILE)
                     package: $(Pipeline.Workspace)/drop/$(artifactName).zip
-                    # Use startup.sh which installs/builds the frontend and
-                    # launches gunicorn with UvicornWorker
                     startUpCommand: "bash startup.sh"
                     deploymentMethod: zipDeploy
+
+                # ── Alternative: Kudu ZIP deploy (no Azure tasks, no service connection)
+                # Uncomment below and remove the AzureWebApp@1 task above if preferred.
+                # Requires two secret pipeline variables: KUDU_USER and KUDU_PASS
+                # (found in App Service → Deployment Center → FTP credentials)
+                #
+                # - script: |
+                #     curl -X POST \
+                #       "https://$(WEBAPP_NAME).scm.azurewebsites.net/api/zipdeploy" \
+                #       -u "$(KUDU_USER):$(KUDU_PASS)" \
+                #       --data-binary @$(Pipeline.Workspace)/drop/$(artifactName).zip
+                #   displayName: "Kudu ZIP deploy"
 
                 # ── Post-deploy smoke test ───────────────────────────────────
                 - script: |
